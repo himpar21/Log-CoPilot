@@ -1,0 +1,70 @@
+version: '3.8'
+
+services:
+  ollama:
+    image: ollama/ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    container_name: ollama
+    pull_policy: always
+    tty: true
+    restart: unless-stopped
+    # Uncomment the following lines to enable GPU support with NVIDIA
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: 1
+    #           capabilities: [gpu]
+
+  logcopilot-api:
+    build: .
+    container_name: logcopilot_api
+    ports:
+      - "8000:8000"
+    depends_on:
+      - ollama
+    volumes:
+      # Mount local logs directory into the container
+      - ./logs:/app/logs
+      # Mount vector store to persist it between runs
+      - ./vector_store:/app/vector_store
+    environment:
+      # Point the API to the Ollama service within the Docker network
+      - OLLAMA_BASE_URL=http://ollama:11434
+      # Specify the model to use (make sure you pull it first)
+      - OLLAMA_MODEL=phi3
+      - LOGS_DIRECTORY=/app/logs
+      - VECTOR_STORE_PATH=/app/vector_store/faiss_index
+    restart: unless-stopped
+
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+    depends_on:
+      - logcopilot-api
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: grafana
+    ports:
+      - "3000:3000"
+    volumes:
+      - grafana_data:/var/lib/grafana
+    depends_on:
+      - prometheus
+    restart: unless-stopped
+
+volumes:
+  ollama_data:
+  grafana_data:
